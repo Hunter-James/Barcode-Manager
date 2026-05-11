@@ -39,6 +39,41 @@ from . import preprocessing as pp
 Image = np.ndarray
 
 
+_FORMAT_ALIASES: dict[str, str] = {
+    "QRCode": "QR Code",
+    "QRCODE": "QR Code",
+    "DataMatrix": "Data Matrix",
+    "DATAMATRIX": "Data Matrix",
+    "Aztec": "Aztec",
+    "AZTEC": "Aztec",
+    "PDF417": "PDF417",
+    "Code128": "Code 128",
+    "CODE128": "Code 128",
+    "Code39": "Code 39",
+    "CODE39": "Code 39",
+    "Code93": "Code 93",
+    "CODE93": "Code 93",
+    "Codabar": "Codabar",
+    "CODABAR": "Codabar",
+    "EAN13": "EAN-13",
+    "EAN-13": "EAN-13",
+    "EAN8": "EAN-8",
+    "EAN-8": "EAN-8",
+    "UPCA": "UPC-A",
+    "UPC-A": "UPC-A",
+    "UPCE": "UPC-E",
+    "UPC-E": "UPC-E",
+    "ITF": "ITF",
+}
+
+
+def canonical_format(name: str) -> str:
+    """Normalize a barcode format name to the friendly form used by encode()."""
+    if not name:
+        return name
+    return _FORMAT_ALIASES.get(name, _FORMAT_ALIASES.get(name.replace(" ", ""), name))
+
+
 @dataclasses.dataclass(frozen=True)
 class BarcodeResult:
     text: str
@@ -67,10 +102,11 @@ def _zxing_decode(img: Image) -> list[BarcodeResult]:
                     (int(p.bottom_right.x), int(p.bottom_right.y)),
                     (int(p.bottom_left.x), int(p.bottom_left.y)),
                 )
+            raw_name = str(r.format).split(".")[-1]
             out.append(
                 BarcodeResult(
                     text=r.text,
-                    format=str(r.format).split(".")[-1],
+                    format=canonical_format(raw_name),
                     engine="zxing-cpp",
                     points=pts,
                 )
@@ -92,7 +128,12 @@ def _pyzbar_decode(img: Image) -> list[BarcodeResult]:
                 text = r.data.decode("latin-1", errors="replace")
             pts = tuple((int(pt.x), int(pt.y)) for pt in r.polygon) if r.polygon else ()
             out.append(
-                BarcodeResult(text=text, format=str(r.type), engine="pyzbar", points=pts)
+                BarcodeResult(
+                    text=text,
+                    format=canonical_format(str(r.type)),
+                    engine="pyzbar",
+                    points=pts,
+                )
             )
     except Exception:
         pass
@@ -121,7 +162,7 @@ def _cv2_qr_decode(img: Image) -> list[BarcodeResult]:
                 continue
             poly = tuple((int(p[0]), int(p[1])) for p in pts) if pts is not None else ()
             out.append(
-                BarcodeResult(text=txt, format="QRCODE", engine="cv2-qr", points=poly)
+                BarcodeResult(text=txt, format="QR Code", engine="cv2-qr", points=poly)
             )
     except Exception:
         pass

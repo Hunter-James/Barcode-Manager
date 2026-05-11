@@ -150,6 +150,41 @@ QListWidget {{
 QListWidget::item {{ padding: 8px; border-bottom: 1px solid {SEPARATOR}; }}
 QListWidget::item:selected {{ background-color: {ACCENT_DARK}; color: white; }}
 
+QFrame#HistoryHeader {{
+    background-color: {ACCENT};
+    border: none;
+}}
+QLabel#HistoryTitle {{
+    color: white;
+    font-size: 14pt;
+    font-weight: 500;
+}}
+QFrame#HistoryItem {{
+    background-color: transparent;
+    border: none;
+    border-bottom: 1px solid {SEPARATOR};
+}}
+QLabel#HistoryItemTitle {{
+    color: white;
+    font-weight: 600;
+    font-size: 10pt;
+}}
+QLabel#HistoryItemMeta {{
+    color: {TEXT_DIM};
+    font-size: 9pt;
+}}
+QScrollArea#HistoryScroll {{
+    background-color: {BG};
+    border: none;
+}}
+QWidget#HistoryContainer {{
+    background-color: {BG};
+}}
+QLabel#HistoryEmpty {{
+    color: {TEXT_DIM};
+    font-size: 11pt;
+}}
+
 QScrollBar:vertical {{
     background: {BG};
     width: 10px;

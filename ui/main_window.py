@@ -74,6 +74,7 @@ class MainWindow(QMainWindow):
         self._settings = SettingsTab(on_clear_history=self._clear_history)
         self._history = HistoryView(self._store)
         self._reader.result_decoded.connect(self._history.add)
+        self._history.closed.connect(self._close_history)
         self._create_idx = self._stack.addWidget(self._reader)  # 0
         self._stack.addWidget(self._create)   # 1
         self._stack.addWidget(self._settings) # 2
@@ -96,13 +97,14 @@ class MainWindow(QMainWindow):
         # Shortcuts
         QShortcut(QKeySequence("Ctrl+O"), self, activated=self._reader.open_file)
         QShortcut(QKeySequence("Ctrl+Shift+S"), self, activated=self._reader.start_snip)
-        QShortcut(QKeySequence("Ctrl+H"), self, activated=lambda: self._goto_history())
+        QShortcut(QKeySequence("Ctrl+H"), self, activated=self._goto_history)
         QShortcut(QKeySequence("Escape"), self, activated=self._reader.reset)
 
         self._top.set_active("Reader")
 
     # ----- routing -----
     def _on_top_selected(self, name: str) -> None:
+        self._top.setVisible(True)
         if name == "Reader":
             self._stack.setCurrentWidget(self._reader)
         elif name == "Create":
@@ -114,6 +116,8 @@ class MainWindow(QMainWindow):
         self._bottom.set_active(None)
 
     def _on_bottom_action(self, key: str) -> None:
+        if key != "history":
+            self._top.setVisible(True)
         if key == "snip":
             self._top.set_active("Reader")
             self._stack.setCurrentWidget(self._reader)
@@ -137,10 +141,15 @@ class MainWindow(QMainWindow):
     def _goto_history(self) -> None:
         self._reader.stop_camera()
         self._history.refresh()
+        self._top.setVisible(False)
         self._stack.setCurrentWidget(self._history)
         self._bottom.set_active("history")
-        # clear top-tab highlight: pretend reader still active for visual parity
+
+    def _close_history(self) -> None:
+        self._top.setVisible(True)
+        self._stack.setCurrentWidget(self._reader)
         self._top.set_active("Reader")
+        self._bottom.set_active(None)
 
     def _show_more_menu(self) -> None:
         menu = QMenu(self)

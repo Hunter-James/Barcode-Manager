@@ -186,6 +186,41 @@ def more_icon(size: int = 32, color: str = "#FFFFFF") -> QIcon:
     return _make(size, draw)
 
 
+def search_icon(size: int = 32, color: str = "#FFFFFF") -> QIcon:
+    """Magnifying glass."""
+
+    def draw(p: QPainter, s: int) -> None:
+        _stroke(p, color, max(1.5, s / 14))
+        cx, cy = s * 0.42, s * 0.42
+        r = s * 0.22
+        p.drawEllipse(QPointF(cx, cy), r, r)
+        import math
+        hx = cx + r * math.cos(math.pi / 4)
+        hy = cy + r * math.sin(math.pi / 4)
+        p.drawLine(QPointF(hx, hy), QPointF(s - s * 0.18, s - s * 0.18))
+
+    return _make(size, draw)
+
+
+def filter_icon(size: int = 32, color: str = "#FFFFFF") -> QIcon:
+    """Funnel."""
+
+    def draw(p: QPainter, s: int) -> None:
+        _stroke(p, color, max(1.5, s / 14))
+        m = s * 0.22
+        path = QPainterPath()
+        path.moveTo(m, m)
+        path.lineTo(s - m, m)
+        path.lineTo(s * 0.58, s * 0.50)
+        path.lineTo(s * 0.58, s - m * 0.7)
+        path.lineTo(s * 0.42, s - m * 0.4)
+        path.lineTo(s * 0.42, s * 0.50)
+        path.closeSubpath()
+        p.drawPath(path)
+
+    return _make(size, draw)
+
+
 def close_icon(size: int = 32, color: str = "#FFFFFF") -> QIcon:
     def draw(p: QPainter, s: int) -> None:
         _stroke(p, color, max(1.6, s / 12))
