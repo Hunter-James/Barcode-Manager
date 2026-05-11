@@ -100,6 +100,37 @@ def _zxing_binarizers() -> list[object]:
     return _ZXING_BINARIZERS
 
 
+# AIM symbology identifiers that mean "this symbol was encoded as GS1".
+# When zxing-cpp's TextMode.Plain returns the payload, it strips the
+# GS1 "Macro" codeword that lives at the head of such a symbol — but
+# downstream consumers (ERP, label printer, database) require the
+# leading 0x1d (FNC1) byte to be present.
+_GS1_SYMBOLOGY_IDS = frozenset(
+    {"]d2", "]C1", "]e0", "]e1", "]e2", "]e3", "]e4", "]e5", "]Q3", "]Q4", "]Q5"}
+)
+
+
+def _looks_gs1(r) -> bool:
+    sym_id = (getattr(r, "symbology_identifier", "") or "").strip()
+    if sym_id in _GS1_SYMBOLOGY_IDS:
+        return True
+    ct = getattr(r, "content_type", None)
+    gs1 = getattr(zxingcpp, "ContentType", None)
+    gs1 = getattr(gs1, "GS1", None) if gs1 is not None else None
+    if gs1 is not None and ct == gs1:
+        return True
+    return False
+
+
+def _restore_gs1_prefix(r) -> str:
+    text = r.text
+    if not text or text.startswith("\x1d"):
+        return text
+    if _looks_gs1(r):
+        return "\x1d" + text
+    return text
+
+
 def _zxing_decode(img: Image, multi_binarizer: bool = False) -> list[BarcodeResult]:
     if zxingcpp is None:
         return []
@@ -131,7 +162,7 @@ def _zxing_decode(img: Image, multi_binarizer: bool = False) -> list[BarcodeResu
             raw_name = str(r.format).split(".")[-1]
             out.append(
                 BarcodeResult(
-                    text=r.text,
+                    text=_restore_gs1_prefix(r),
                     format=canonical_format(raw_name),
                     engine="zxing-cpp",
                     points=pts,
