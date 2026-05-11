@@ -1,38 +1,59 @@
-"""Small shared widgets — top tab strip, bottom tab strip."""
+"""Shared widgets — the top tab strip and the icon-only bottom action bar."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QToolButton, QVBoxLayout
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QToolButton
 
 
-class TabButton(QToolButton):
-    def __init__(
-        self,
-        text: str,
-        icon: QIcon,
-        bottom: bool = False,
-        parent=None,
-    ) -> None:
+class _TopTabButton(QToolButton):
+    """Top-tab button: icon over short text, with an active-state underline."""
+
+    def __init__(self, text: str, icon: QIcon, parent=None) -> None:
         super().__init__(parent)
         self.setText(text)
         self.setIcon(icon)
-        self.setIconSize(QSize(22 if bottom else 24, 22 if bottom else 24))
+        self.setIconSize(QSize(20, 20))
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-        self.setProperty("topTab" if not bottom else "bottomTab", True)
+        self.setProperty("topTab", True)
         self.setProperty("active", False)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setAutoRaise(True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # Enough room for both the icon and the text descender ("g" in
+        # "Settings"); without this 20 + 14 pt easily clips on the
+        # default style.
+        self.setMinimumHeight(54)
 
     def set_active(self, active: bool) -> None:
         if bool(self.property("active")) == active:
             return
         self.setProperty("active", active)
-        # re-apply stylesheet so the dynamic property takes effect
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+
+class _BottomTabButton(QToolButton):
+    """Bottom-bar button: icon-only with a tooltip."""
+
+    def __init__(self, tooltip: str, icon: QIcon, parent=None) -> None:
+        super().__init__(parent)
+        self.setIcon(icon)
+        self.setIconSize(QSize(22, 22))
+        self.setToolTip(tooltip)
+        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.setProperty("bottomTab", True)
+        self.setProperty("active", False)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAutoRaise(True)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setMinimumHeight(40)
+
+    def set_active(self, active: bool) -> None:
+        if bool(self.property("active")) == active:
+            return
+        self.setProperty("active", active)
         self.style().unpolish(self)
         self.style().polish(self)
 
@@ -42,16 +63,18 @@ class TabStrip(QFrame):
 
     selected = pyqtSignal(str)
 
+    HEIGHT = 56
+
     def __init__(self, items: list[tuple[str, QIcon]], parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("TopBar")
-        self.setFixedHeight(60)
+        self.setFixedHeight(self.HEIGHT)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self._buttons: dict[str, TabButton] = {}
+        self._buttons: dict[str, _TopTabButton] = {}
         for name, icon in items:
-            btn = TabButton(name, icon, bottom=False)
+            btn = _TopTabButton(name, icon)
             btn.clicked.connect(lambda _=False, n=name: self.set_active(n))
             layout.addWidget(btn, 1)
             self._buttons[name] = btn
@@ -63,24 +86,22 @@ class TabStrip(QFrame):
 
 
 class BottomBar(QFrame):
-    """Bottom action strip (Screen Snip / File / Camera / History / More)."""
+    """Bottom action strip — icons only, with tooltips."""
 
     clicked_action = pyqtSignal(str)
 
-    def __init__(
-        self,
-        items: list[tuple[str, QIcon, str]],  # (display_text, icon, action_key)
-        parent=None,
-    ) -> None:
+    HEIGHT = 46
+
+    def __init__(self, items: list[tuple[str, QIcon, str]], parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("BottomBar")
-        self.setFixedHeight(58)
+        self.setFixedHeight(self.HEIGHT)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self._buttons: dict[str, TabButton] = {}
-        for text, icon, key in items:
-            btn = TabButton(text, icon, bottom=True)
+        self._buttons: dict[str, _BottomTabButton] = {}
+        for tooltip, icon, key in items:
+            btn = _BottomTabButton(tooltip, icon)
             btn.clicked.connect(lambda _=False, k=key: self.clicked_action.emit(k))
             layout.addWidget(btn, 1)
             self._buttons[key] = btn

@@ -41,7 +41,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Barcode Manager for Windows")
         self.setWindowIcon(app_icon(64))
-        self.setFixedSize(QSize(420, 700))
+        self.setFixedSize(QSize(380, 640))
         # Disable maximize button on the title bar
         flags = self.windowFlags()
         flags &= ~Qt.WindowType.WindowMaximizeButtonHint
@@ -81,14 +81,14 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._history)  # 3
         v.addWidget(self._stack, 1)
 
-        # Bottom bar
+        # Bottom bar — icons only, tooltips on hover
         self._bottom = BottomBar(
             [
-                ("Screen Snip", snip_icon(28), "snip"),
-                ("File", file_icon(28), "file"),
-                ("Camera", camera_icon(28), "camera"),
-                ("History", history_icon(28), "history"),
-                ("", more_icon(28), "more"),
+                ("Screen Snip", snip_icon(32), "snip"),
+                ("File", file_icon(32), "file"),
+                ("Camera", camera_icon(32), "camera"),
+                ("History", history_icon(32), "history"),
+                ("More", more_icon(32), "more"),
             ]
         )
         self._bottom.clicked_action.connect(self._on_bottom_action)

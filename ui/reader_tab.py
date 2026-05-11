@@ -163,28 +163,16 @@ class ReaderTab(QWidget):
         frame.setObjectName("ReaderArea")
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addStretch(1)
+        layout.setSpacing(0)
+        layout.addStretch(3)
 
         art = QLabel()
         art.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pm = QPixmap(180, 180)
-        pm.fill(Qt.GlobalColor.transparent)
-        p = QPainter(pm)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        pen = QPen(QColor("#FFFFFF"))
-        pen.setWidthF(8)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        p.setPen(pen)
-        from PyQt6.QtCore import QRectF
-
-        p.drawRoundedRect(QRectF(10, 10, 130, 130), 26, 26)
-        # plus
-        p.drawLine(QPointF(155, 130), QPointF(155, 170))
-        p.drawLine(QPointF(135, 150), QPointF(175, 150))
-        p.end()
-        art.setPixmap(pm)
+        art.setPixmap(self._build_idle_art())
+        art.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         layout.addWidget(art, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        layout.addSpacing(18)
 
         btn = QPushButton("SCREEN SNIP")
         btn.setObjectName("PrimaryButton")
@@ -192,14 +180,41 @@ class ReaderTab(QWidget):
         btn.clicked.connect(self.start_snip)
         layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        layout.addStretch(2)
+        layout.addStretch(4)
 
+        version_row = QHBoxLayout()
+        version_row.setContentsMargins(0, 0, 12, 6)
+        version_row.addStretch(1)
         version = QLabel("Version 5.2.0.0")
         version.setObjectName("VersionLabel")
-        version.setAlignment(Qt.AlignmentFlag.AlignRight)
-        version.setContentsMargins(0, 0, 12, 8)
-        layout.addWidget(version)
+        version_row.addWidget(version)
+        layout.addLayout(version_row)
         return frame
+
+    @staticmethod
+    def _build_idle_art() -> QPixmap:
+        from PyQt6.QtCore import QRectF
+
+        size = 170
+        pm = QPixmap(size, size)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        pen = QPen(QColor("#FFFFFF"))
+        pen.setWidthF(7)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+        # Hollow rounded square, upper-left
+        rect = QRectF(8, 8, 118, 118)
+        p.drawRoundedRect(rect, 22, 22)
+        # Plus sign at lower-right, slightly outside the square
+        cx, cy = 144, 140
+        arm = 20
+        p.drawLine(QPointF(cx - arm, cy), QPointF(cx + arm, cy))
+        p.drawLine(QPointF(cx, cy - arm), QPointF(cx, cy + arm))
+        p.end()
+        return pm
 
     # --------- Preview ----------
     def _build_preview(self) -> QWidget:

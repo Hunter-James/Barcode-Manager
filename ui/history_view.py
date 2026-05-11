@@ -137,13 +137,7 @@ class HistoryView(QWidget):
         h.setContentsMargins(6, 0, 6, 0)
         h.setSpacing(4)
 
-        self._close_btn = QToolButton()
-        self._close_btn.setIcon(close_icon(28))
-        self._close_btn.setIconSize(QSize(22, 22))
-        self._close_btn.setAutoRaise(True)
-        self._close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._close_btn.setFixedSize(QSize(40, 40))
-        self._close_btn.clicked.connect(self.closed.emit)
+        self._close_btn = self._make_header_btn(close_icon(28), self.closed.emit)
         h.addWidget(self._close_btn)
 
         title = QLabel("History")
@@ -156,16 +150,23 @@ class HistoryView(QWidget):
             (filter_icon(28), self._noop),
             (more_icon(28), self._show_menu),
         ):
-            btn = QToolButton()
-            btn.setIcon(icon)
-            btn.setIconSize(QSize(22, 22))
-            btn.setAutoRaise(True)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFixedSize(QSize(40, 40))
-            btn.clicked.connect(slot)
+            btn = self._make_header_btn(icon, slot)
             h.addWidget(btn)
 
         return header
+
+    @staticmethod
+    def _make_header_btn(icon, slot) -> QToolButton:
+        btn = QToolButton()
+        btn.setObjectName("HistoryHeaderBtn")
+        btn.setIcon(icon)
+        btn.setIconSize(QSize(20, 20))
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setFixedSize(QSize(40, 40))
+        btn.setAutoRaise(False)  # let QSS style hover/pressed states
+        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn.clicked.connect(slot)
+        return btn
 
     def _noop(self) -> None:
         pass
@@ -180,11 +181,16 @@ class HistoryView(QWidget):
         ))
 
     def refresh(self) -> None:
-        # remove existing items (everything except the trailing stretch)
+        # remove existing items (everything except the trailing stretch).
+        # setParent(None) detaches immediately from the rendering tree —
+        # deleteLater alone would leave the old widgets visible until the
+        # next event-loop tick, producing overlapping rows on a snapshot
+        # or a fast successive refresh.
         while self._container_layout.count() > 1:
             it = self._container_layout.takeAt(0)
             w = it.widget()
             if w is not None:
+                w.setParent(None)
                 w.deleteLater()
 
         entries = self._store.all()

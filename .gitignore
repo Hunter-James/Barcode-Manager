@@ -44,3 +44,4 @@ tests/hard_case.png
 
 # Local app data
 *.log
+tests/snapshots/
