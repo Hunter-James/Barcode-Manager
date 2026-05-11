@@ -39,7 +39,7 @@ from decoder import BarcodeResult, decode_image, decode_path
 from storage import HistoryEntry
 
 from .icons import close_icon, snip_icon
-from .snip_overlay import SnipOverlay
+from .snip_overlay import WindowsSnipper
 
 
 def ndarray_to_qpixmap(img: np.ndarray) -> QPixmap:
@@ -289,31 +289,22 @@ class ReaderTab(QWidget):
 
     def start_snip(self) -> None:
         self.stop_camera()
+        # Use the Windows built-in Snipping Tool — handles multi-monitor
+        # and DPI scaling natively.
+        self._snipper = WindowsSnipper(self)
+        self._snipper.captured.connect(self._on_snip)
+        self._snipper.cancelled.connect(self._on_snip_cancel)
+        self._snipper.start()
+
+    def _on_snip(self, arr: np.ndarray) -> None:
         win = self.window()
-        was_visible = win.isVisible()
-        win.hide()
-        QApplication.processEvents()
-
-        overlay = SnipOverlay()
-        overlay.captured.connect(lambda arr: self._on_snip(arr, was_visible))
-        overlay.cancelled.connect(lambda: self._on_snip_cancel(was_visible))
-        overlay.showFullScreen()
-        overlay.raise_()
-        overlay.activateWindow()
-        self._snip_overlay = overlay  # keep reference
-
-    def _on_snip(self, arr: np.ndarray, restore: bool) -> None:
-        if restore:
-            self.window().show()
-            self.window().raise_()
-            self.window().activateWindow()
+        win.raise_()
+        win.activateWindow()
         self.show_image(arr, source="snip")
 
-    def _on_snip_cancel(self, restore: bool) -> None:
-        if restore:
-            self.window().show()
-            self.window().raise_()
-            self.window().activateWindow()
+    def _on_snip_cancel(self) -> None:
+        # Nothing to restore — Windows snipper doesn't hide our window.
+        pass
 
     def start_camera(self) -> None:
         from camera import CameraWorker, list_cameras

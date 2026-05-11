@@ -41,8 +41,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Barcode Manager for Windows")
         self.setWindowIcon(app_icon(64))
-        self.resize(420, 700)
-        self.setMinimumSize(QSize(380, 580))
+        self.setFixedSize(QSize(420, 700))
+        # Disable maximize button on the title bar
+        flags = self.windowFlags()
+        flags &= ~Qt.WindowType.WindowMaximizeButtonHint
+        self.setWindowFlags(flags)
         self.setStyleSheet(QSS)
 
         self._store = HistoryStore()
