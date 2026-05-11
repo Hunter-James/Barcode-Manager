@@ -389,19 +389,21 @@ class ReaderTab(QWidget):
         if not results:
             return
         r = results[0]
-        clean = display_text(r.text)
-        if clean == self._last_camera_result_text:
+        if r.text == self._last_camera_result_text:
             return
-        self._last_camera_result_text = clean
-        self._current_text = clean
-        self._banner.setText(clean)
+        self._last_camera_result_text = r.text
+        # Store raw — downstream (history.json, clipboard) needs FNC1 intact.
+        self._current_text = r.text
+        # Display gets newlines instead of FNC1 so the user sees the
+        # field structure rather than a phantom line break.
+        self._banner.setText(display_text(r.text))
         self._banner.setObjectName("StatusBanner")
         self._banner.setProperty("kind", "ok")
         self._refresh_banner_style()
         self._subtle.setText(f"{r.format} • {r.engine}")
         self._preview_label.set_polygons([list(r.points) for r in results if r.points])
         self._history_add(
-            HistoryEntry(text=clean, format=r.format, source="camera", engine=r.engine)
+            HistoryEntry(text=r.text, format=r.format, source="camera", engine=r.engine)
         )
         self.result_decoded.emit(r)
 
@@ -444,9 +446,9 @@ class ReaderTab(QWidget):
             self._current_text = None
             return
         r = results[0]
-        clean = display_text(r.text)
-        self._current_text = clean
-        self._banner.setText(clean)
+        # Store raw — downstream (history.json, clipboard) needs FNC1 intact.
+        self._current_text = r.text
+        self._banner.setText(display_text(r.text))
         self._banner.setObjectName("StatusBanner")
         self._banner.setProperty("kind", "ok")
         self._refresh_banner_style()
@@ -455,7 +457,7 @@ class ReaderTab(QWidget):
         self._preview_label.set_polygons([list(rr.points) for rr in results if rr.points])
         self._history_add(
             HistoryEntry(
-                text=clean,
+                text=r.text,
                 format=r.format,
                 source=getattr(self, "_pending_source", "file"),
                 engine=r.engine,

@@ -104,10 +104,16 @@ def _zxing_decode(img: Image, multi_binarizer: bool = False) -> list[BarcodeResu
     if zxingcpp is None:
         return []
     binarizers = _zxing_binarizers() if multi_binarizer else _zxing_binarizers()[:1]
+    # Plain mode returns the raw decoded bytes — for GS1 Data Matrix that
+    # means the AIs are NOT wrapped in parentheses (HRI) and FNC1 (0x1d)
+    # separators are preserved literally. The downstream system that
+    # consumes the clipboard text is strict about format and needs these
+    # bytes intact.
+    text_mode = zxingcpp.TextMode.Plain
     for binarizer in binarizers:
         out: list[BarcodeResult] = []
         try:
-            results = zxingcpp.read_barcodes(img, binarizer=binarizer)
+            results = zxingcpp.read_barcodes(img, binarizer=binarizer, text_mode=text_mode)
         except Exception:
             results = []
         for r in results:
@@ -280,19 +286,40 @@ def _strip_points(results: list[BarcodeResult]) -> list[BarcodeResult]:
     ]
 
 
+def _scale_points(results: list[BarcodeResult], sx: float, sy: float) -> list[BarcodeResult]:
+    if sx == 1.0 and sy == 1.0:
+        return results
+    return [
+        BarcodeResult(
+            text=r.text,
+            format=r.format,
+            engine=r.engine,
+            points=tuple((int(p[0] * sx), int(p[1] * sy)) for p in r.points),
+        )
+        for r in results
+    ]
+
+
 def decode_image(img: Image) -> list[BarcodeResult]:
     """Return every barcode/QR found in `img` after exhaustive preprocessing."""
     if img is None or img.size == 0:
         return []
 
+    orig_h, orig_w = img.shape[:2]
     img = _ensure_min_resolution(img)
+    new_h, new_w = img.shape[:2]
+    # If we upscaled the input we need to scale fast-path coordinates
+    # back so the polygon lands on the right place in the *original*
+    # frame (which is what the preview shows).
+    sx = orig_w / new_w if new_w else 1.0
+    sy = orig_h / new_h if new_h else 1.0
 
     results: list[BarcodeResult] = []
 
-    # Fast path — points are in original coordinates and can be drawn.
+    # Fast path — points are in (possibly upscaled) image coordinates.
     fast = _engines(img)
     if fast:
-        return _dedup(fast)
+        return _dedup(_scale_points(fast, sx, sy))
 
     for variant in pp.variants(img):
         found = _engines(variant)

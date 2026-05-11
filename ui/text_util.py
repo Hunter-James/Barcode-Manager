@@ -1,34 +1,49 @@
-"""Helpers for rendering decoded barcode payloads in the UI."""
+"""Helpers for rendering decoded barcode payloads in the UI.
+
+The decoder returns *raw* bytes from the symbol (e.g. for a GS1 Data
+Matrix the AIs are concatenated and separated by FNC1 / 0x1d). We
+preserve that raw form for storage and clipboard — downstream code
+(database lookups, log search) is type-strict and expects the original
+invisible separators. For QLabel display we replace FNC1 with a real
+newline so the user sees clear field boundaries.
+"""
 
 from __future__ import annotations
 
 import re
 
-# Control characters we silently drop (everything below 0x20 / 0x7f
-# except the whitespace-ish ones, which we collapse into a single space).
+# Drop everything else in the C0 / DEL block — those bytes don't have a
+# meaningful glyph in any system font and just show up as boxes.
 _DROP_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1c\x1e-\x1f\x7f]")
-_WHITESPACE = re.compile(r"\s+")
 
 
 def display_text(text: str) -> str:
-    """Make a decoded payload safe for single-line display.
+    """Multi-line rendering for the banner and tooltips.
 
-    Real-world GS1 Data Matrix codes embed FNC1 (``\\x1d``) as a field
-    separator between Application Identifiers, and some producers also
-    insert literal CR/LF inside the payload. Both render as ragged
-    line breaks inside ``QLabel`` — that is why a code containing two
-    fields shows up as e.g.::
-
-        (01)04620408890759(21)5hYA0h(93)J9oB
-        Lo,0,
-
-    Convert FNC1 to a visible ``|`` bullet, drop other control bytes
-    and collapse whitespace runs so the result reads as one logical
-    line. The label still wraps it naturally when it is long.
+    FNC1 (0x1d) is rendered as a newline so each GS1 field gets its own
+    visible row. CR/LF in the payload normalised to a single newline.
+    Other control bytes are stripped.
     """
     if not text:
         return text
-    text = text.replace("\x1d", " | ")
+    text = text.replace("\x1d", "\n")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = _DROP_CTRL.sub("", text)
-    text = _WHITESPACE.sub(" ", text)
+    # Collapse runs of newlines — multiple consecutive separators look
+    # noisy and almost always come from malformed payloads.
+    text = re.sub(r"\n+", "\n", text)
+    return text.strip()
+
+
+def inline_text(text: str) -> str:
+    """Single-line rendering for fixed-width contexts (history snippet).
+
+    All separators become a single space so long payloads still fit a
+    truncated row.
+    """
+    if not text:
+        return text
+    text = text.replace("\x1d", " ")
+    text = _DROP_CTRL.sub("", text)
+    text = re.sub(r"\s+", " ", text)
     return text.strip()
