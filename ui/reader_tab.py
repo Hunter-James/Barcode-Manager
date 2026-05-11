@@ -40,6 +40,7 @@ from storage import HistoryEntry
 
 from .icons import close_icon, snip_icon
 from .snip_overlay import ScreenSnipper
+from .text_util import display_text
 
 
 def ndarray_to_qpixmap(img: np.ndarray) -> QPixmap:
@@ -388,18 +389,19 @@ class ReaderTab(QWidget):
         if not results:
             return
         r = results[0]
-        if r.text == self._last_camera_result_text:
+        clean = display_text(r.text)
+        if clean == self._last_camera_result_text:
             return
-        self._last_camera_result_text = r.text
-        self._current_text = r.text
-        self._banner.setText(r.text)
+        self._last_camera_result_text = clean
+        self._current_text = clean
+        self._banner.setText(clean)
         self._banner.setObjectName("StatusBanner")
         self._banner.setProperty("kind", "ok")
         self._refresh_banner_style()
         self._subtle.setText(f"{r.format} • {r.engine}")
         self._preview_label.set_polygons([list(r.points) for r in results if r.points])
         self._history_add(
-            HistoryEntry(text=r.text, format=r.format, source="camera", engine=r.engine)
+            HistoryEntry(text=clean, format=r.format, source="camera", engine=r.engine)
         )
         self.result_decoded.emit(r)
 
@@ -442,8 +444,9 @@ class ReaderTab(QWidget):
             self._current_text = None
             return
         r = results[0]
-        self._current_text = r.text
-        self._banner.setText(r.text)
+        clean = display_text(r.text)
+        self._current_text = clean
+        self._banner.setText(clean)
         self._banner.setObjectName("StatusBanner")
         self._banner.setProperty("kind", "ok")
         self._refresh_banner_style()
@@ -452,7 +455,7 @@ class ReaderTab(QWidget):
         self._preview_label.set_polygons([list(rr.points) for rr in results if rr.points])
         self._history_add(
             HistoryEntry(
-                text=r.text,
+                text=clean,
                 format=r.format,
                 source=getattr(self, "_pending_source", "file"),
                 engine=r.engine,

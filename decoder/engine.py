@@ -269,6 +269,17 @@ def _ensure_min_resolution(img: Image) -> Image:
     return cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
 
+def _strip_points(results: list[BarcodeResult]) -> list[BarcodeResult]:
+    """Return copies without ``points`` — used for results coming out of
+    transformed images (upscaled / rotated / cropped), whose coordinates
+    no longer match the original frame, so drawing them on the preview
+    would put the polygon in the wrong place."""
+    return [
+        BarcodeResult(text=r.text, format=r.format, engine=r.engine, points=())
+        for r in results
+    ]
+
+
 def decode_image(img: Image) -> list[BarcodeResult]:
     """Return every barcode/QR found in `img` after exhaustive preprocessing."""
     if img is None or img.size == 0:
@@ -278,6 +289,7 @@ def decode_image(img: Image) -> list[BarcodeResult]:
 
     results: list[BarcodeResult] = []
 
+    # Fast path — points are in original coordinates and can be drawn.
     fast = _engines(img)
     if fast:
         return _dedup(fast)
@@ -285,7 +297,7 @@ def decode_image(img: Image) -> list[BarcodeResult]:
     for variant in pp.variants(img):
         found = _engines(variant)
         if found:
-            results.extend(found)
+            results.extend(_strip_points(found))
             break
 
     if not results:
@@ -295,12 +307,12 @@ def decode_image(img: Image) -> list[BarcodeResult]:
             region = _ensure_min_resolution(region)
             found = _engines(region)
             if found:
-                results.extend(found)
+                results.extend(_strip_points(found))
                 continue
             for variant in pp.variants(region):
                 found = _engines(variant)
                 if found:
-                    results.extend(found)
+                    results.extend(_strip_points(found))
                     break
             if results:
                 break
@@ -310,12 +322,12 @@ def decode_image(img: Image) -> list[BarcodeResult]:
             rotated = pp.rotate(img, angle)
             found = _engines(rotated)
             if found:
-                results.extend(found)
+                results.extend(_strip_points(found))
                 break
             for variant in pp.variants(rotated):
                 found = _engines(variant)
                 if found:
-                    results.extend(found)
+                    results.extend(_strip_points(found))
                     break
             if results:
                 break
@@ -325,7 +337,7 @@ def decode_image(img: Image) -> list[BarcodeResult]:
         for variant in pp.variants(img):
             found = _engines(variant, deep=True)
             if found:
-                results.extend(found)
+                results.extend(_strip_points(found))
                 break
 
     return _dedup(results)

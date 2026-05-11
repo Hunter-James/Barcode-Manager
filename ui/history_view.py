@@ -24,6 +24,7 @@ from decoder import canonical_format, encode
 from storage import HistoryEntry, HistoryStore
 
 from .icons import close_icon, filter_icon, more_icon, search_icon
+from .text_util import display_text
 
 
 def _ndarray_to_qpixmap(img: np.ndarray) -> QPixmap:
@@ -63,10 +64,11 @@ class _HistoryItemWidget(QFrame):
         info.setSpacing(2)
         info.setContentsMargins(0, 0, 0, 0)
 
-        snippet = entry.text if len(entry.text) <= 36 else entry.text[:33] + "..."
+        clean = display_text(entry.text)
+        snippet = clean if len(clean) <= 36 else clean[:33] + "..."
         title = QLabel(snippet)
         title.setObjectName("HistoryItemTitle")
-        title.setToolTip(entry.text)
+        title.setToolTip(clean)
         info.addWidget(title)
 
         type_label = QLabel(f"Type: {canonical_format(entry.format)}")
@@ -84,13 +86,13 @@ class _HistoryItemWidget(QFrame):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def mouseDoubleClickEvent(self, _e) -> None:
-        QApplication.clipboard().setText(self._entry.text)
+        QApplication.clipboard().setText(display_text(self._entry.text))
 
     def contextMenuEvent(self, e) -> None:
         menu = QMenu(self)
         copy_act = QAction("Copy text", self)
         copy_act.triggered.connect(
-            lambda: QApplication.clipboard().setText(self._entry.text)
+            lambda: QApplication.clipboard().setText(display_text(self._entry.text))
         )
         menu.addAction(copy_act)
         menu.exec(e.globalPos())
