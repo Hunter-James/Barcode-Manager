@@ -57,20 +57,29 @@ def ndarray_to_qpixmap(img: np.ndarray) -> QPixmap:
 
 
 class _DecodeWorker(QThread):
-    """One-shot decode of a single image off the GUI thread."""
+    """One-shot decode of a single image off the GUI thread.
 
-    finished_with = pyqtSignal(list)  # list[BarcodeResult]
+    Each worker carries a monotonically increasing id; the Reader uses
+    it to ignore results from outdated workers (i.e. when the user
+    triggers a second decode before the first one finishes — that bug
+    used to surface as "first scan succeeds, second one says
+    No barcode found" because the late result of the previous worker
+    over-wrote the new one).
+    """
 
-    def __init__(self, image: np.ndarray, parent=None) -> None:
+    finished_with = pyqtSignal(list, int)  # list[BarcodeResult], worker_id
+
+    def __init__(self, image: np.ndarray, worker_id: int, parent=None) -> None:
         super().__init__(parent)
         self._img = image
+        self._id = worker_id
 
     def run(self) -> None:
         try:
             results = decode_image(self._img)
         except Exception:
             results = []
-        self.finished_with.emit(results)
+        self.finished_with.emit(results, self._id)
 
 
 class PreviewLabel(QLabel):
@@ -140,10 +149,14 @@ class ReaderTab(QWidget):
     def __init__(self, history_add: Callable[[HistoryEntry], None], parent=None) -> None:
         super().__init__(parent)
         self._history_add = history_add
-        self._worker: _DecodeWorker | None = None
         self._camera = None
         self._current_image: np.ndarray | None = None
         self._last_camera_result_text: str | None = None
+        # Workers are tracked by id; only the latest one's result is honoured.
+        self._workers: list[_DecodeWorker] = []
+        self._latest_still_id: int = 0
+        self._latest_camera_id: int = 0
+        self._worker_id_seq: int = 0
 
         self.setAcceptDrops(True)
 
@@ -356,13 +369,22 @@ class ReaderTab(QWidget):
         self._preview_label.set_image(ndarray_to_qpixmap(frame))
 
     def _on_camera_decode(self, frame: np.ndarray) -> None:
-        if self._worker is not None and self._worker.isRunning():
+        # Skip if any camera worker is still busy — frames arrive ~30 fps,
+        # we don't want a backlog.
+        if any(w.isRunning() for w in self._workers if getattr(w, "_purpose", "") == "camera"):
             return
-        self._worker = _DecodeWorker(frame)
-        self._worker.finished_with.connect(self._on_camera_decode_result)
-        self._worker.start()
+        self._worker_id_seq += 1
+        self._latest_camera_id = self._worker_id_seq
+        worker = _DecodeWorker(frame, self._worker_id_seq, parent=self)
+        worker._purpose = "camera"  # tag, used by the skip above
+        worker.finished_with.connect(self._on_camera_decode_result)
+        worker.finished.connect(self._cleanup_worker)
+        self._workers.append(worker)
+        worker.start()
 
-    def _on_camera_decode_result(self, results: list[BarcodeResult]) -> None:
+    def _on_camera_decode_result(self, results: list[BarcodeResult], worker_id: int) -> None:
+        if worker_id != self._latest_camera_id:
+            return  # outdated frame, ignore
         if not results:
             return
         r = results[0]
@@ -389,15 +411,26 @@ class ReaderTab(QWidget):
 
     # --------- Decode dispatch ----------
     def _run_decode(self, img: np.ndarray, source: str) -> None:
-        if self._worker is not None and self._worker.isRunning():
-            self._worker.wait(50)
+        self._worker_id_seq += 1
+        self._latest_still_id = self._worker_id_seq
         self._pending_source = source
         self.busy_changed.emit(True)
-        self._worker = _DecodeWorker(img)
-        self._worker.finished_with.connect(self._on_decode_result)
-        self._worker.start()
+        worker = _DecodeWorker(img, self._worker_id_seq, parent=self)
+        worker._purpose = "still"
+        worker.finished_with.connect(self._on_decode_result)
+        worker.finished.connect(self._cleanup_worker)
+        self._workers.append(worker)
+        worker.start()
 
-    def _on_decode_result(self, results: list[BarcodeResult]) -> None:
+    def _cleanup_worker(self) -> None:
+        w = self.sender()
+        if w in self._workers:
+            self._workers.remove(w)
+            w.deleteLater()
+
+    def _on_decode_result(self, results: list[BarcodeResult], worker_id: int) -> None:
+        if worker_id != self._latest_still_id:
+            return  # an older decode finished after we kicked off a newer one
         self.busy_changed.emit(False)
         if not results:
             self._banner.setText("No barcode found")

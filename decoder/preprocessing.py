@@ -68,6 +68,38 @@ def morph_close(binary: Image, k: int = 3) -> Image:
     return cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
 
 
+def morph_dilate(binary: Image, k: int = 2) -> Image:
+    """Bridges gaps in dotted / inkjet-printed codes."""
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (k, k))
+    return cv2.dilate(binary, kernel)
+
+
+def bilateral(gray: Image, d: int = 7, sigma_color: int = 50, sigma_space: int = 50) -> Image:
+    """Edge-preserving smoothing — removes substrate texture (cardboard,
+    fabric) without softening the barcode/QR edges themselves."""
+    return cv2.bilateralFilter(gray, d, sigma_color, sigma_space)
+
+
+def gamma(gray: Image, g: float) -> Image:
+    """Lighten (g<1) or darken (g>1) — useful when capture is over- or
+    under-exposed."""
+    inv = 1.0 / g
+    lut = np.array([((i / 255.0) ** inv) * 255 for i in range(256)], dtype=np.uint8)
+    return cv2.LUT(gray, lut)
+
+
+def directional_sharpen(gray: Image, horizontal: bool = True) -> Image:
+    """Sharpens edges along one axis — good for 1D barcodes where bars
+    run perpendicular to one axis."""
+    if horizontal:
+        kernel = np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=np.float32) / 8.0
+    else:
+        kernel = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=np.float32) / 8.0
+    edges = cv2.filter2D(gray, cv2.CV_32F, kernel)
+    sharpened = np.clip(gray.astype(np.float32) + 1.5 * np.abs(edges), 0, 255).astype(np.uint8)
+    return sharpened
+
+
 def rotate(img: Image, angle: float) -> Image:
     if angle == 0:
         return img
@@ -98,20 +130,51 @@ def variants(img: Image) -> Iterator[Image]:
     gray = to_gray(img)
     yield gray
 
-    yield clahe(gray)
+    # Contrast and sharpening
+    cl = clahe(gray)
+    yield cl
     yield unsharp(gray, amount=1.5, radius=2)
-    yield unsharp(clahe(gray), amount=1.2, radius=2)
+    yield unsharp(cl, amount=1.2, radius=2)
+    yield unsharp(gray, amount=3.0, radius=5)  # aggressive — for heavily defocused
 
+    # Edge-preserving smoothing — removes substrate texture (cardboard, fabric)
+    bil = bilateral(gray)
+    yield bil
+    yield clahe(bil)
+    yield unsharp(bil, amount=1.5, radius=2)
+
+    # Thresholding
     yield otsu(gray)
+    yield otsu(cl)
+    yield otsu(bil)
     yield adaptive_threshold(gray, block=31, c=5)
     yield adaptive_threshold(gray, block=51, c=7)
+    yield adaptive_threshold(cl, block=41, c=5)
 
+    # Gamma — over/under exposure
+    yield gamma(gray, 1.6)  # darken
+    yield gamma(gray, 0.6)  # brighten
+    yield otsu(gamma(gray, 1.6))
+    yield otsu(gamma(gray, 0.6))
+
+    # Inverts (light-on-dark codes)
     yield invert(gray)
     yield invert(otsu(gray))
 
+    # Morphology — fill dotted / inkjet codes
     yield morph_close(otsu(gray), k=3)
     yield morph_close(adaptive_threshold(gray, 41, 5), k=3)
+    yield morph_dilate(otsu(cl), k=2)
+    yield morph_dilate(otsu(bil), k=2)
+    yield morph_close(morph_dilate(otsu(cl), k=2), k=2)
 
+    # 1D-friendly directional sharpening
+    yield directional_sharpen(gray, horizontal=True)
+    yield directional_sharpen(gray, horizontal=False)
+    yield otsu(directional_sharpen(gray, horizontal=True))
+    yield otsu(directional_sharpen(gray, horizontal=False))
+
+    # Upscaled variants for tiny codes
     for scale in (1.5, 2.0, 3.0):
         big = upscale(gray, scale)
         yield big
@@ -119,7 +182,10 @@ def variants(img: Image) -> Iterator[Image]:
         yield unsharp(big, amount=1.5, radius=2)
         yield otsu(big)
         yield adaptive_threshold(big, block=51, c=7)
+        yield bilateral(big)
+        yield otsu(bilateral(big))
 
+    # Heaviest path — full denoise
     yield denoise(gray)
     yield unsharp(denoise(gray), amount=1.8, radius=3)
     yield denoise(upscale(gray, 2.0))

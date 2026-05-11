@@ -85,12 +85,32 @@ class BarcodeResult:
         return (self.text, self.format)
 
 
-def _zxing_decode(img: Image) -> list[BarcodeResult]:
+_ZXING_BINARIZERS: list[object] = []
+
+
+def _zxing_binarizers() -> list[object]:
+    global _ZXING_BINARIZERS
+    if _ZXING_BINARIZERS or zxingcpp is None:
+        return _ZXING_BINARIZERS
+    b = zxingcpp.Binarizer
+    # Order matters — cheapest / most accurate first; fall back to the
+    # alternatives only if LocalAverage misses.
+    candidates = ["LocalAverage", "GlobalHistogram", "FixedThreshold", "BoolCast"]
+    _ZXING_BINARIZERS = [getattr(b, name) for name in candidates if hasattr(b, name)]
+    return _ZXING_BINARIZERS
+
+
+def _zxing_decode(img: Image, multi_binarizer: bool = False) -> list[BarcodeResult]:
     if zxingcpp is None:
         return []
-    out: list[BarcodeResult] = []
-    try:
-        for r in zxingcpp.read_barcodes(img):
+    binarizers = _zxing_binarizers() if multi_binarizer else _zxing_binarizers()[:1]
+    for binarizer in binarizers:
+        out: list[BarcodeResult] = []
+        try:
+            results = zxingcpp.read_barcodes(img, binarizer=binarizer)
+        except Exception:
+            results = []
+        for r in results:
             if not r.text:
                 continue
             pts = ()
@@ -111,9 +131,9 @@ def _zxing_decode(img: Image) -> list[BarcodeResult]:
                     points=pts,
                 )
             )
-    except Exception:
-        pass
-    return out
+        if out:
+            return out
+    return []
 
 
 def _pyzbar_decode(img: Image) -> list[BarcodeResult]:
@@ -169,9 +189,9 @@ def _cv2_qr_decode(img: Image) -> list[BarcodeResult]:
     return out
 
 
-def _engines(img: Image) -> list[BarcodeResult]:
+def _engines(img: Image, *, deep: bool = False) -> list[BarcodeResult]:
     out: list[BarcodeResult] = []
-    out.extend(_zxing_decode(img))
+    out.extend(_zxing_decode(img, multi_binarizer=deep))
     if not out:
         out.extend(_pyzbar_decode(img))
     if not out:
@@ -234,10 +254,27 @@ def _dedup(results: Iterable[BarcodeResult]) -> list[BarcodeResult]:
     return out
 
 
+_MIN_INPUT_DIM = 480
+
+
+def _ensure_min_resolution(img: Image) -> Image:
+    """Phone-camera shots through a screen-snip of a small region come in
+    very tiny (e.g. 200×40 px barcodes). zxing/pyzbar struggle below
+    roughly 400 px on the longest side, so always upscale first."""
+    h, w = img.shape[:2]
+    longest = max(h, w)
+    if longest >= _MIN_INPUT_DIM:
+        return img
+    scale = _MIN_INPUT_DIM / longest
+    return cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+
+
 def decode_image(img: Image) -> list[BarcodeResult]:
     """Return every barcode/QR found in `img` after exhaustive preprocessing."""
     if img is None or img.size == 0:
         return []
+
+    img = _ensure_min_resolution(img)
 
     results: list[BarcodeResult] = []
 
@@ -255,6 +292,7 @@ def decode_image(img: Image) -> list[BarcodeResult]:
         for region in _detect_regions(img):
             if region.size == 0:
                 continue
+            region = _ensure_min_resolution(region)
             found = _engines(region)
             if found:
                 results.extend(found)
@@ -280,6 +318,14 @@ def decode_image(img: Image) -> list[BarcodeResult]:
                     results.extend(found)
                     break
             if results:
+                break
+
+    # Deep multi-binarizer pass — last resort, more expensive
+    if not results:
+        for variant in pp.variants(img):
+            found = _engines(variant, deep=True)
+            if found:
+                results.extend(found)
                 break
 
     return _dedup(results)
