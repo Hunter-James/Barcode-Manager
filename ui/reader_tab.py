@@ -40,7 +40,7 @@ from storage import HistoryEntry
 
 from .icons import close_icon, snip_icon
 from .snip_overlay import ScreenSnipper
-from .text_util import display_text
+from .text_util import display_text, inline_text
 
 
 def ndarray_to_qpixmap(img: np.ndarray) -> QPixmap:
@@ -93,15 +93,29 @@ class PreviewLabel(QLabel):
         self.setMinimumSize(QSize(200, 200))
         self.setStyleSheet("background-color: #1A6FB5;")
         self._raw: QPixmap | None = None
-        self._polys: list[list[tuple[int, int]]] = []
+        # Each marker is (polygon_points, label_or_None). When label is
+        # not None, a numbered red badge is drawn at the polygon's
+        # bottom-left corner so the user can match each polygon to its
+        # entry in the banner list.
+        self._markers: list[tuple[list[tuple[int, int]], str | None]] = []
 
     def set_image(self, pm: QPixmap | None) -> None:
         self._raw = pm
-        self._polys = []
+        self._markers = []
         self._render()
 
-    def set_polygons(self, polys: list[list[tuple[int, int]]]) -> None:
-        self._polys = polys
+    def set_polygons(
+        self,
+        items: list[tuple[list[tuple[int, int]], str | None]] | list[list[tuple[int, int]]],
+    ) -> None:
+        # Backward-compatible: accept either a list of polygons or a list
+        # of (polygon, label) tuples.
+        if items and isinstance(items[0], tuple) and len(items[0]) == 2 and (
+            items[0][1] is None or isinstance(items[0][1], str)
+        ):
+            self._markers = list(items)  # already in (poly, label) form
+        else:
+            self._markers = [(p, None) for p in items]
         self._render()
 
     def resizeEvent(self, e) -> None:
@@ -117,23 +131,28 @@ class PreviewLabel(QLabel):
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
-        if not self._polys:
+        if not self._markers:
             self.setPixmap(scaled)
             return
-        # draw polygons in image-space, then scale
+
         canvas = self._raw.copy()
         p = QPainter(canvas)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        w = self._raw.width()
+        line_w = max(2, w // 200)
         pen = QPen(QColor("#39FF14"))
-        pen.setWidth(max(2, self._raw.width() // 200))
-        p.setPen(pen)
-        for poly in self._polys:
+        pen.setWidth(line_w)
+        for poly, label in self._markers:
             if len(poly) < 2:
                 continue
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
             for i in range(len(poly)):
                 a = poly[i]
                 b = poly[(i + 1) % len(poly)]
                 p.drawLine(QPointF(a[0], a[1]), QPointF(b[0], b[1]))
+            if label is not None:
+                self._draw_badge(p, poly, label, w)
         p.end()
         scaled = canvas.scaled(
             self.size(),
@@ -141,6 +160,33 @@ class PreviewLabel(QLabel):
             Qt.TransformationMode.SmoothTransformation,
         )
         self.setPixmap(scaled)
+
+    @staticmethod
+    def _draw_badge(p: QPainter, poly: list[tuple[int, int]], label: str, img_w: int) -> None:
+        # Place the badge straddling the bottom-left corner of the
+        # polygon — half inside, half outside, so it's clearly attached
+        # to *this* code and not the next one.
+        xs = [pt[0] for pt in poly]
+        ys = [pt[1] for pt in poly]
+        cx = min(xs)
+        cy = max(ys)
+        radius = max(14, img_w // 36)
+
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#E33B3B"))
+        p.drawEllipse(QPointF(cx, cy), radius, radius)
+
+        p.setPen(QColor("#FFFFFF"))
+        font = p.font()
+        font.setBold(True)
+        font.setPixelSize(int(radius * 1.25))
+        p.setFont(font)
+        metrics = p.fontMetrics()
+        rect = metrics.boundingRect(label)
+        # Approximately center the digits inside the circle
+        tx = cx - rect.width() / 2
+        ty = cy + rect.height() / 2 - metrics.descent()
+        p.drawText(QPointF(tx, ty), label)
 
 
 class ReaderTab(QWidget):
@@ -388,20 +434,24 @@ class ReaderTab(QWidget):
             return  # outdated frame, ignore
         if not results:
             return
+        # Camera frames usually contain one code; if more arrive in the
+        # same frame we just show the first one in the banner but still
+        # number all of them on the preview.
         r = results[0]
         if r.text == self._last_camera_result_text:
             return
         self._last_camera_result_text = r.text
-        # Store raw — downstream (history.json, clipboard) needs FNC1 intact.
         self._current_text = r.text
-        # Display gets newlines instead of FNC1 so the user sees the
-        # field structure rather than a phantom line break.
         self._banner.setText(display_text(r.text))
         self._banner.setObjectName("StatusBanner")
         self._banner.setProperty("kind", "ok")
         self._refresh_banner_style()
         self._subtle.setText(f"{r.format} • {r.engine}")
-        self._preview_label.set_polygons([list(r.points) for r in results if r.points])
+        if len(results) > 1:
+            markers = [(list(rr.points), str(i)) for i, rr in enumerate(results, 1) if rr.points]
+        else:
+            markers = [(list(rr.points), None) for rr in results if rr.points]
+        self._preview_label.set_polygons(markers)
         self._history_add(
             HistoryEntry(text=r.text, format=r.format, source="camera", engine=r.engine)
         )
@@ -445,25 +495,62 @@ class ReaderTab(QWidget):
             self._preview_label.set_polygons([])
             self._current_text = None
             return
-        r = results[0]
-        # Store raw — downstream (history.json, clipboard) needs FNC1 intact.
-        self._current_text = r.text
-        self._banner.setText(display_text(r.text))
+
+        # Reading order — top-to-bottom, then left-to-right inside a row.
+        def _key(r: BarcodeResult) -> tuple[float, float]:
+            if not r.points:
+                return (float("inf"), float("inf"))
+            xs = [p[0] for p in r.points]
+            ys = [p[1] for p in r.points]
+            return (min(ys), min(xs))
+
+        ordered = sorted(results, key=_key)
+        source = getattr(self, "_pending_source", "file")
+
+        if len(ordered) == 1:
+            r = ordered[0]
+            self._current_text = r.text
+            self._banner.setText(display_text(r.text))
+            self._banner.setObjectName("StatusBanner")
+            self._banner.setProperty("kind", "ok")
+            self._refresh_banner_style()
+            self._subtle.setText(f"{r.format} • {r.engine} • tap to copy")
+            self._preview_label.set_polygons(
+                [(list(r.points), None)] if r.points else []
+            )
+            self._history_add(
+                HistoryEntry(text=r.text, format=r.format, source=source, engine=r.engine)
+            )
+            self.result_decoded.emit(r)
+            return
+
+        # Multiple codes — number them and show as a list.
+        banner_lines = [f"{i}. {inline_text(r.text)}" for i, r in enumerate(ordered, 1)]
+        self._banner.setText("\n".join(banner_lines))
         self._banner.setObjectName("StatusBanner")
         self._banner.setProperty("kind", "ok")
         self._refresh_banner_style()
-        extra = f" (+{len(results)-1} more)" if len(results) > 1 else ""
-        self._subtle.setText(f"{r.format} • {r.engine}{extra} • tap to copy")
-        self._preview_label.set_polygons([list(rr.points) for rr in results if rr.points])
-        self._history_add(
-            HistoryEntry(
-                text=r.text,
-                format=r.format,
-                source=getattr(self, "_pending_source", "file"),
-                engine=r.engine,
-            )
+        # Clipboard carries raw payloads (FNC1 and all) one per line so
+        # the consumer can split on \n.
+        self._current_text = "\n".join(r.text for r in ordered)
+
+        formats = sorted({r.format for r in ordered})
+        engines = sorted({r.engine for r in ordered})
+        self._subtle.setText(
+            f"{len(ordered)} codes • {', '.join(formats)} • {', '.join(engines)} • tap to copy"
         )
-        self.result_decoded.emit(r)
+
+        markers: list[tuple[list[tuple[int, int]], str | None]] = []
+        for i, r in enumerate(ordered, 1):
+            if r.points:
+                markers.append((list(r.points), str(i)))
+        self._preview_label.set_polygons(markers)
+
+        for r in ordered:
+            self._history_add(
+                HistoryEntry(text=r.text, format=r.format, source=source, engine=r.engine)
+            )
+        self.result_decoded.emit(ordered[0])
 
     def _refresh_banner_style(self) -> None:
         self._banner.style().unpolish(self._banner)
