@@ -1,12 +1,11 @@
 """Compare our full pipeline against the raw decoders.
 
-Mimics the situation in the second screenshot: a small, blurry,
-low-contrast QR sitting inside a busy photo. The original Barcode
-Manager fails on this; the goal is to show that:
+A small, blurry, low-contrast QR sitting inside a busy photo — the
+kind of case where every stock decoder gives up. The goal is to show:
 
-    * raw zxing-cpp on the same image fails too
-    * raw pyzbar on the same image fails too
-    * raw cv2.QRCodeDetector on the same image fails too
+    * raw zxing-cpp on the same image fails
+    * raw pyzbar on the same image fails
+    * raw cv2.QRCodeDetector on the same image fails
     * our pipeline (decode_image) succeeds
 """
 

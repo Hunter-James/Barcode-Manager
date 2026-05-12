@@ -39,7 +39,7 @@ from .widgets import BottomBar, TabStrip
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Barcode Manager for Windows")
+        self.setWindowTitle("Barcode Manager")
         self.setWindowIcon(app_icon(64))
         self.setFixedSize(QSize(380, 640))
         # Disable maximize button on the title bar
@@ -195,8 +195,8 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             "About Barcode Manager",
-            "Barcode Manager (Open Edition)\n"
-            "Version 5.2.0.0\n\n"
+            "Barcode Manager\n"
+            "Version 1.0.0\n\n"
             "Multi-engine recognition with aggressive preprocessing.\n"
             "Powered by zxing-cpp, pyzbar, OpenCV, PyQt6.",
         )

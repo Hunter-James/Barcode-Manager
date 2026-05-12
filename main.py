@@ -1,9 +1,9 @@
-"""Barcode Manager — clone of 'Barcode Manager for Windows'.
+"""Barcode Manager — desktop barcode / QR scanner for Windows.
 
 Reads barcodes and QR codes from screen captures, image files, and live
 camera. Uses zxing-cpp + pyzbar + OpenCV with an aggressive preprocessing
-pipeline so it succeeds on the kind of phone-camera photo that defeats
-the original.
+pipeline so it succeeds on the kind of phone-camera photo that stock
+decoders give up on.
 """
 
 from __future__ import annotations

@@ -1,6 +1,7 @@
-"""Stress test mirroring the user-reported failures.
+"""Stress test for real-world failure modes.
 
-Two scenarios the original couldn't handle and that we should:
+Two scenarios that stock decoders typically miss but our pipeline should
+recover:
 
 * A tiny linear barcode coming out of a screen-snip (200×40 px), the
   kind you get when you crop a small region of a phone screen or web

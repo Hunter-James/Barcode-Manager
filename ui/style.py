@@ -1,4 +1,4 @@
-"""Application stylesheet — mirrors the look of Barcode Manager for Windows.
+"""Application stylesheet — dark Windows-11-flavoured theme.
 
 Key rule: do **not** apply ``background-color`` to ``QWidget`` globally —
 that paints over every QLabel and ends up putting a dark square behind

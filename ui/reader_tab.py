@@ -1,7 +1,7 @@
 """Reader tab — the main scanning surface.
 
 Three modes share the same surface:
-    * 'idle'    — the big SCREEN SNIP button (matches the original).
+    * 'idle'    — the big SCREEN SNIP button.
     * 'preview' — shows a still image and the decoded result banner.
     * 'camera'  — shows a live camera feed and a result banner.
 """
@@ -245,7 +245,7 @@ class ReaderTab(QWidget):
         version_row = QHBoxLayout()
         version_row.setContentsMargins(0, 0, 12, 6)
         version_row.addStretch(1)
-        version = QLabel("Version 5.2.0.0")
+        version = QLabel("Version 1.0.0")
         version.setObjectName("VersionLabel")
         version_row.addWidget(version)
         layout.addLayout(version_row)
