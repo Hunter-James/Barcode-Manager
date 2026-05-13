@@ -227,12 +227,56 @@ def _cv2_qr_decode(img: Image) -> list[BarcodeResult]:
 
 
 def _engines(img: Image, *, deep: bool = False) -> list[BarcodeResult]:
+    """First-hit decoder pass used by the deep cascade. Tries zxing,
+    then pyzbar, then cv2-qr — short-circuits on the first non-empty
+    result so the cascade stays cheap when the easier engines win."""
     out: list[BarcodeResult] = []
     out.extend(_zxing_decode(img, multi_binarizer=deep))
     if not out:
         out.extend(_pyzbar_decode(img))
     if not out:
         out.extend(_cv2_qr_decode(img))
+    return out
+
+
+def _all_engines(img: Image) -> list[BarcodeResult]:
+    """Union of every decoder's findings on *img*.
+
+    Used by the fast path and the completion sweep, where we care
+    about *completeness* (catching every code in a multi-code shot)
+    rather than the speed-optimised first-hit policy of ``_engines``."""
+    out: list[BarcodeResult] = []
+    out.extend(_zxing_decode(img))
+    out.extend(_pyzbar_decode(img))
+    out.extend(_cv2_qr_decode(img))
+    return out
+
+
+def _completion_sweep(img: Image, exclude: set[tuple[str, str]]) -> list[BarcodeResult]:
+    """Mop-up pass after a successful fast decode.
+
+    Even when zxing already returns N codes on the raw frame, one code
+    in a multi-code shot can be just below the default binarizer's
+    contrast threshold and slip through. We retry on a small set of
+    cheap preprocessed variants — CLAHE, bilateral, Otsu, adaptive
+    threshold — and return anything new (not already in *exclude*).
+    """
+    gray = pp.to_gray(img)
+    variants = (
+        pp.clahe(gray),
+        pp.bilateral(gray),
+        pp.otsu(gray),
+        pp.adaptive_threshold(gray, 41, 5),
+        pp.unsharp(pp.clahe(gray), amount=1.2, radius=2),
+    )
+    out: list[BarcodeResult] = []
+    seen = set(exclude)
+    for variant in variants:
+        for r in _all_engines(variant):
+            if r.key() in seen:
+                continue
+            seen.add(r.key())
+            out.append(r)
     return out
 
 
@@ -347,10 +391,20 @@ def decode_image(img: Image) -> list[BarcodeResult]:
 
     results: list[BarcodeResult] = []
 
-    # Fast path — points are in (possibly upscaled) image coordinates.
-    fast = _engines(img)
+    # Fast path — every engine, full union (a multi-code shot may have
+    # one symbol that only pyzbar likes and another that only zxing
+    # likes; we want both).
+    fast = _all_engines(img)
     if fast:
-        return _dedup(_scale_points(fast, sx, sy))
+        fast = _scale_points(fast, sx, sy)
+        # Completion sweep — one code in a multi-code image often sits
+        # just outside the default binarizer's comfort zone. A few
+        # cheap preprocessed variants rescue it without touching the
+        # rest of the cascade.
+        extras = _strip_points(
+            _completion_sweep(img, exclude={r.key() for r in fast})
+        )
+        return _dedup(fast + extras)
 
     for variant in pp.variants(img):
         found = _engines(variant)
