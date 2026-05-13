@@ -174,6 +174,29 @@ QFrame#HistoryItem {{
     border: none;
     border-bottom: 1px solid {SEPARATOR};
 }}
+QFrame#HistoryItemGrouped {{
+    background-color: rgba(26, 143, 227, 0.04);
+    border: none;
+    border-left: 3px solid {ACCENT};
+    border-bottom: 1px solid {SEPARATOR};
+}}
+QFrame#HistoryGroupHeader {{
+    background-color: rgba(26, 143, 227, 0.06);
+    border: none;
+    border-left: 3px solid {ACCENT};
+    border-top: 1px solid {SEPARATOR};
+}}
+QLabel#HistoryGroupHeaderLabel {{
+    color: {ACCENT};
+    font-size: 9pt;
+    font-weight: 600;
+    background-color: transparent;
+}}
+QLabel#HistoryGroupHeaderTime {{
+    color: {TEXT_DIM};
+    font-size: 9pt;
+    background-color: transparent;
+}}
 QLabel#HistoryItemTitle {{
     color: white;
     font-weight: 600;

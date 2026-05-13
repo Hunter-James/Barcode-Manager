@@ -23,6 +23,13 @@ class HistoryEntry:
     source: str  # 'snip' | 'file' | 'camera' | 'create'
     timestamp: float = dataclasses.field(default_factory=time.time)
     engine: str = ""
+    # ``group_id`` is a uuid shared by every entry produced by a single
+    # multi-code scan. Empty string means "standalone" (one code or
+    # came from camera / create). ``group_size`` is the total number of
+    # entries in that group — denormalised onto each row so the View
+    # can show a "N codes" header without rescanning the whole list.
+    group_id: str = ""
+    group_size: int = 1
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
@@ -35,6 +42,8 @@ class HistoryEntry:
             source=d.get("source", ""),
             timestamp=float(d.get("timestamp", time.time())),
             engine=d.get("engine", ""),
+            group_id=d.get("group_id", ""),
+            group_size=int(d.get("group_size", 1)),
         )
 
 

@@ -52,6 +52,10 @@ def main():
     win = MainWindow()
     win._store = store
     win._history._store = store
+    # MainWindow bound the reader's history_add callback to the
+    # default store at construction time — repoint it at our temp
+    # store so the test doesn't write into %APPDATA%.
+    win._reader._history_add = store.add
     win.show()
     app.processEvents()
 
@@ -67,6 +71,19 @@ def main():
     pm = win.grab()
     pm.save(str(out_path), "PNG")
     print(f"  -> {out_path}")
+
+    # Now show what History looks like after a multi-code scan +
+    # one standalone scan, so the group block is visible against a
+    # plain item.
+    win._reader.show_image(encode("standalone-payload", "QR Code", size=300), source="file")
+    for _ in range(30):
+        app.processEvents()
+        time.sleep(0.05)
+    win._goto_history()
+    app.processEvents()
+    hist_path = OUT / "multicode_history.png"
+    win.grab().save(str(hist_path), "PNG")
+    print(f"  -> {hist_path}")
     return 0
 
 

@@ -42,13 +42,21 @@ THUMB_SIZE = 56
 
 
 class _HistoryItemWidget(QFrame):
-    def __init__(self, entry: HistoryEntry, thumb: QPixmap, parent=None) -> None:
+    def __init__(
+        self,
+        entry: HistoryEntry,
+        thumb: QPixmap,
+        in_group: bool = False,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
-        self.setObjectName("HistoryItem")
+        self.setObjectName("HistoryItemGrouped" if in_group else "HistoryItem")
         self._entry = entry
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 10)
+        # Slightly larger left padding for grouped items keeps the
+        # accent border from overlapping the thumbnail.
+        layout.setContentsMargins(14 if not in_group else 11, 10, 14, 10)
         layout.setSpacing(12)
 
         thumb_label = QLabel()
@@ -208,10 +216,49 @@ class HistoryView(QWidget):
             self._container_layout.insertWidget(self._container_layout.count() - 1, empty)
             return
 
-        for e in entries:
-            thumb = self._get_thumb(e.text, e.format)
-            item = _HistoryItemWidget(e, thumb)
-            self._container_layout.insertWidget(self._container_layout.count() - 1, item)
+        # Multi-code scans share a non-empty group_id and were inserted
+        # consecutively, so we just collect runs of equal group_id.
+        i = 0
+        while i < len(entries):
+            e = entries[i]
+            if e.group_id:
+                j = i + 1
+                while j < len(entries) and entries[j].group_id == e.group_id:
+                    j += 1
+                self._append_group(entries[i:j])
+                i = j
+            else:
+                self._append_item(e, in_group=False)
+                i += 1
+
+    def _append_item(self, entry: HistoryEntry, *, in_group: bool) -> None:
+        thumb = self._get_thumb(entry.text, entry.format)
+        item = _HistoryItemWidget(entry, thumb, in_group=in_group)
+        self._container_layout.insertWidget(self._container_layout.count() - 1, item)
+
+    def _append_group(self, group: list[HistoryEntry]) -> None:
+        # Header: "● 3 codes" on the left, timestamp on the right —
+        # makes it obvious this row introduces a multi-code scan.
+        when = datetime.datetime.fromtimestamp(group[0].timestamp).strftime(
+            "%d.%m.%Y %H:%M:%S"
+        )
+        header = QFrame()
+        header.setObjectName("HistoryGroupHeader")
+        h = QHBoxLayout(header)
+        h.setContentsMargins(11, 6, 14, 6)
+        h.setSpacing(6)
+
+        title = QLabel(f"●  {len(group)} codes scanned together")
+        title.setObjectName("HistoryGroupHeaderLabel")
+        h.addWidget(title)
+        h.addStretch(1)
+        time_label = QLabel(when)
+        time_label.setObjectName("HistoryGroupHeaderTime")
+        h.addWidget(time_label)
+
+        self._container_layout.insertWidget(self._container_layout.count() - 1, header)
+        for entry in group:
+            self._append_item(entry, in_group=True)
 
     def _get_thumb(self, text: str, fmt: str) -> QPixmap:
         key = (text, fmt)

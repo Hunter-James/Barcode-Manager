@@ -8,6 +8,7 @@ Three modes share the same surface:
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable
 
 import cv2
@@ -546,9 +547,22 @@ class ReaderTab(QWidget):
                 markers.append((list(r.points), str(i)))
         self._preview_label.set_polygons(markers)
 
-        for r in ordered:
+        # Group every entry of this scan under one uuid so the History
+        # view can render them as a single "N codes scanned together"
+        # block. Add in reverse so that after each insert-at-0 the
+        # store ends up with the group in natural reading order
+        # (code1 on top, code2 below it, etc.).
+        group_id = uuid.uuid4().hex
+        for r in reversed(ordered):
             self._history_add(
-                HistoryEntry(text=r.text, format=r.format, source=source, engine=r.engine)
+                HistoryEntry(
+                    text=r.text,
+                    format=r.format,
+                    source=source,
+                    engine=r.engine,
+                    group_id=group_id,
+                    group_size=len(ordered),
+                )
             )
         self.result_decoded.emit(ordered[0])
 
