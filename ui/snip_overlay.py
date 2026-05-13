@@ -13,11 +13,34 @@ Notably, this does **not** touch the system clipboard — unlike the previous
 
 from __future__ import annotations
 
+import ctypes
 from typing import Optional
 
 import numpy as np
 from PIL import ImageGrab
 from PyQt6.QtCore import QObject, QPoint, QRect, Qt, QTimer, pyqtSignal
+
+# Windows 10 2004+: SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)
+# causes BitBlt-based screen captures (which PIL.ImageGrab uses) to
+# treat the window as if it weren't there. We rely on this so that
+# our own UI cannot leak into the user's snip — ``hide()`` alone is
+# racy on systems where the DWM compositor hasn't repainted the
+# region behind us by the time the grab happens.
+_WDA_NONE = 0x00000000
+_WDA_EXCLUDEFROMCAPTURE = 0x00000011
+
+
+def _set_capture_exclusion(hwnd: int, excluded: bool) -> bool:
+    if not hwnd:
+        return False
+    try:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.SetWindowDisplayAffinity.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        user32.SetWindowDisplayAffinity.restype = ctypes.c_int
+        flag = _WDA_EXCLUDEFROMCAPTURE if excluded else _WDA_NONE
+        return bool(user32.SetWindowDisplayAffinity(ctypes.c_void_p(hwnd), flag))
+    except Exception:
+        return False
 from PyQt6.QtGui import (
     QColor,
     QGuiApplication,
@@ -149,7 +172,7 @@ class ScreenSnipper(QObject):
     captured = pyqtSignal(np.ndarray)
     cancelled = pyqtSignal()
 
-    HIDE_DELAY_MS = 120
+    HIDE_DELAY_MS = 180
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -158,8 +181,16 @@ class ScreenSnipper(QObject):
 
     def start(self, app_window: QWidget | None = None) -> None:
         self._app_window = app_window
-        if app_window is not None and app_window.isVisible():
-            app_window.hide()
+        if app_window is not None:
+            hwnd = int(app_window.winId())
+            # Belt-and-suspenders: exclude from BitBlt capture *and*
+            # hide the visible window. Exclusion guarantees the app
+            # cannot leak into the screenshot even if DWM repaint
+            # hasn't caught up; hide() is the visual cue that the
+            # snip mode is active.
+            _set_capture_exclusion(hwnd, True)
+            if app_window.isVisible():
+                app_window.hide()
             QApplication.processEvents()
         # Give the OS a moment to redraw the area behind the hidden window
         QTimer.singleShot(self.HIDE_DELAY_MS, self._do_grab)
@@ -199,6 +230,14 @@ class ScreenSnipper(QObject):
     def _restore_window(self) -> None:
         if self._app_window is None:
             return
+        # Undo the capture exclusion before the user gets the app back —
+        # otherwise the next snapshot tool (their OS Snip & Sketch,
+        # OBS, etc.) would see a black rectangle where our window is.
+        try:
+            hwnd = int(self._app_window.winId())
+            _set_capture_exclusion(hwnd, False)
+        except Exception:
+            pass
         self._app_window.show()
         self._app_window.raise_()
         self._app_window.activateWindow()
