@@ -116,19 +116,24 @@ class MainWindow(QMainWindow):
         self._bottom.set_active(None)
 
     def _on_bottom_action(self, key: str) -> None:
-        if key != "history":
-            self._top.setVisible(True)
+        # Only navigation actions touch the top tab strip's visibility.
+        # ``more`` is just a popup menu — it must not leak the top
+        # tabs back over the History header. ``history`` hides them on
+        # purpose inside ``_goto_history``.
         if key == "snip":
+            self._top.setVisible(True)
             self._top.set_active("Reader")
             self._stack.setCurrentWidget(self._reader)
             self._reader.start_snip()
             self._bottom.set_active("snip")
         elif key == "file":
+            self._top.setVisible(True)
             self._top.set_active("Reader")
             self._stack.setCurrentWidget(self._reader)
             self._reader.open_file()
             self._bottom.set_active("file")
         elif key == "camera":
+            self._top.setVisible(True)
             self._top.set_active("Reader")
             self._stack.setCurrentWidget(self._reader)
             self._reader.start_camera()
