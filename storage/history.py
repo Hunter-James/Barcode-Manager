@@ -83,12 +83,18 @@ class HistoryStore:
         self.path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def add(self, entry: HistoryEntry) -> None:
-        # de-dup against the most recent identical entry within 5s window
-        if self._entries:
+        # De-dup standalone entries against the most recent identical
+        # one within a 5s window — guards against accidental double
+        # adds. Skip this for entries that carry a group_id: a
+        # multi-code scan of nine identical product boxes legitimately
+        # produces nine entries with the same payload, all part of
+        # one scan group, and they must all stay.
+        if self._entries and not entry.group_id:
             last = self._entries[0]
             if (
                 last.text == entry.text
                 and last.format == entry.format
+                and not last.group_id
                 and entry.timestamp - last.timestamp < 5
             ):
                 return

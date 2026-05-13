@@ -59,6 +59,20 @@ def make_multi_dm() -> tuple[np.ndarray, set[str]]:
     return canvas, set(payloads)
 
 
+def make_grid_identical_dm() -> tuple[np.ndarray, str, int]:
+    """3×3 grid of *identical* Data Matrix codes (same payload). A
+    shelf shot of nine identical product boxes — the decoder must
+    report every physical instance, not collapse them via dedup."""
+    payload = "0104600905000240215SAME"
+    dm = encode(payload, "Data Matrix", size=140)
+    if dm.ndim == 2:
+        dm = cv2.cvtColor(dm, cv2.COLOR_GRAY2BGR)
+    padded = cv2.copyMakeBorder(dm, 24, 24, 24, 24, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+    row = cv2.hconcat([padded] * 3)
+    canvas = cv2.vconcat([row] * 3)
+    return canvas, payload, 9
+
+
 def main() -> int:
     cases = [
         ("3 QR codes, middle one low-contrast", make_multi_one_degraded),
@@ -81,6 +95,23 @@ def main() -> int:
         print(f"   raw zxing-cpp found  : {sorted(raw_z)}  (missed {sorted(missed_raw)})")
         print(f"   our pipeline found   : {sorted(ours)}  (missed {sorted(missed_ours)})")
         print(f"   expected             : {sorted(expected)}")
+
+    # Identical-codes test — checks dedup keeps every instance.
+    img, payload, expected_count = make_grid_identical_dm()
+    raw_count = sum(1 for r in zxingcpp.read_barcodes(img) if r.text == payload)
+    ours = decode_image(img)
+    our_count = sum(1 for r in ours if r.text == payload)
+    ok = our_count == expected_count
+    status = "PASS" if ok else "FAIL"
+    if ok:
+        passed += 1
+    else:
+        failed += 1
+    print(f"[{status}] 3x3 grid of identical Data Matrix codes")
+    print(f"   raw zxing-cpp instances : {raw_count}")
+    print(f"   our pipeline instances  : {our_count}")
+    print(f"   expected                : {expected_count}")
+
     print(f"\n{passed}/{passed + failed} passed")
     return 0 if failed == 0 else 1
 

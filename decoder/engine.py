@@ -324,14 +324,53 @@ def _crop_quad(img: Image, pts: np.ndarray, pad: int = 0) -> Image:
     return img[y0:y1, x0:x1]
 
 
+def _polygons_overlap(a: tuple, b: tuple) -> bool:
+    """True if the bounding boxes of two polygons overlap by more than
+    half the smaller box. Used by ``_dedup`` to decide whether two
+    decode results refer to the same physical symbol (polygons sit on
+    top of each other) or to two distinct symbols that happen to
+    share a payload — like a pallet of identical product boxes."""
+    if not a or not b:
+        # One of them has no spatial info (came from a transformed
+        # variant whose coordinates aren't valid in the original
+        # frame). Without geometry we can't tell instances apart, so
+        # we conservatively treat them as the same.
+        return True
+    xs_a = [p[0] for p in a]
+    ys_a = [p[1] for p in a]
+    xs_b = [p[0] for p in b]
+    ys_b = [p[1] for p in b]
+    ax0, ay0, ax1, ay1 = min(xs_a), min(ys_a), max(xs_a), max(ys_a)
+    bx0, by0, bx1, by1 = min(xs_b), min(ys_b), max(xs_b), max(ys_b)
+    ix0, iy0 = max(ax0, bx0), max(ay0, by0)
+    ix1, iy1 = min(ax1, bx1), min(ay1, by1)
+    if ix0 >= ix1 or iy0 >= iy1:
+        return False
+    inter = (ix1 - ix0) * (iy1 - iy0)
+    area_a = max(1, (ax1 - ax0) * (ay1 - ay0))
+    area_b = max(1, (bx1 - bx0) * (by1 - by0))
+    return inter > 0.5 * min(area_a, area_b)
+
+
 def _dedup(results: Iterable[BarcodeResult]) -> list[BarcodeResult]:
-    seen: set[tuple[str, str]] = set()
+    """Drop duplicates while preserving distinct physical codes that
+    happen to share a payload (e.g. nine identical product Data
+    Matrix codes in one shelf shot). Two results are duplicates only
+    when their (text, format) match *and* their polygons overlap. A
+    result without a polygon — typically one rescued by a transformed
+    preprocessing variant — is treated as a duplicate of any
+    same-payload result that does have a polygon."""
     out: list[BarcodeResult] = []
     for r in results:
-        if r.key() in seen:
-            continue
-        seen.add(r.key())
-        out.append(r)
+        is_dup = False
+        for existing in out:
+            if r.key() != existing.key():
+                continue
+            if _polygons_overlap(r.points, existing.points):
+                is_dup = True
+                break
+        if not is_dup:
+            out.append(r)
     return out
 
 
