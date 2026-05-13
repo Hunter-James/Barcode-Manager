@@ -16,6 +16,19 @@ def _appdata_dir() -> Path:
     return p
 
 
+def snapshots_dir() -> Path:
+    """Directory where per-scan annotated snapshots live."""
+    p = _appdata_dir() / "snapshots"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _snapshot_path_for(group_id: str) -> Path | None:
+    if not group_id:
+        return None
+    return snapshots_dir() / f"{group_id}.png"
+
+
 @dataclasses.dataclass
 class HistoryEntry:
     text: str
@@ -81,12 +94,32 @@ class HistoryStore:
                 return
         self._entries.insert(0, entry)
         if len(self._entries) > self.MAX_ENTRIES:
+            dropped = self._entries[self.MAX_ENTRIES:]
             self._entries = self._entries[: self.MAX_ENTRIES]
+            # Drop snapshot files for groups whose every entry has fallen
+            # off the tail.
+            remaining_groups = {e.group_id for e in self._entries if e.group_id}
+            for e in dropped:
+                if e.group_id and e.group_id not in remaining_groups:
+                    path = _snapshot_path_for(e.group_id)
+                    if path is not None:
+                        try:
+                            path.unlink()
+                        except OSError:
+                            pass
         self.save()
 
     def clear(self) -> None:
         self._entries = []
         self.save()
+        # Wipe snapshot directory too — orphaned snapshots are useless
+        # and just waste disk space.
+        snap_dir = snapshots_dir()
+        for f in snap_dir.glob("*.png"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
 
     def all(self) -> list[HistoryEntry]:
         return list(self._entries)

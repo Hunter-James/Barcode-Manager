@@ -21,10 +21,24 @@ from PyQt6.QtWidgets import (
 )
 
 from decoder import canonical_format, encode
-from storage import HistoryEntry, HistoryStore
+from storage import HistoryEntry, HistoryStore, snapshots_dir
 
-from .icons import close_icon, filter_icon, more_icon, search_icon
+from .icons import chevron_icon, close_icon, filter_icon, more_icon, search_icon
 from .text_util import display_text, inline_text
+
+
+class _ClickableFrame(QFrame):
+    """QFrame that emits ``clicked`` on left mouse press anywhere on it.
+
+    Used for the History group header so clicking the whole bar toggles
+    the group (not just the small chevron button on the left)."""
+
+    clicked = pyqtSignal()
+
+    def mousePressEvent(self, e):  # type: ignore[override]
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(e)
 
 
 def _ndarray_to_qpixmap(img: np.ndarray) -> QPixmap:
@@ -119,6 +133,10 @@ class HistoryView(QWidget):
         self._store = store
         self._thumb_cache: dict[tuple[str, str], QPixmap] = {}
         self._query = ""
+        # group_id -> expanded? Default True so the most recent scan
+        # arrives unfolded; the user collapses what they don't want
+        # to keep occupying screen real estate.
+        self._expanded: dict[str, bool] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -237,18 +255,32 @@ class HistoryView(QWidget):
         self._container_layout.insertWidget(self._container_layout.count() - 1, item)
 
     def _append_group(self, group: list[HistoryEntry]) -> None:
-        # Header: "● 3 codes" on the left, timestamp on the right —
-        # makes it obvious this row introduces a multi-code scan.
+        gid = group[0].group_id
+        expanded = self._expanded.setdefault(gid, True)
+
         when = datetime.datetime.fromtimestamp(group[0].timestamp).strftime(
             "%d.%m.%Y %H:%M:%S"
         )
-        header = QFrame()
+
+        header = _ClickableFrame()
         header.setObjectName("HistoryGroupHeader")
+        header.setCursor(Qt.CursorShape.PointingHandCursor)
+        header.clicked.connect(lambda g=gid: self._toggle_group(g))
         h = QHBoxLayout(header)
-        h.setContentsMargins(11, 6, 14, 6)
+        h.setContentsMargins(8, 6, 14, 6)
         h.setSpacing(6)
 
-        title = QLabel(f"●  {len(group)} codes scanned together")
+        chevron = QToolButton()
+        chevron.setObjectName("HistoryGroupChevron")
+        chevron.setIcon(chevron_icon("down" if expanded else "right", size=18, color="#1A8FE3"))
+        chevron.setIconSize(QSize(14, 14))
+        chevron.setCursor(Qt.CursorShape.PointingHandCursor)
+        chevron.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        chevron.setFixedSize(QSize(22, 22))
+        chevron.clicked.connect(lambda _=False, g=gid: self._toggle_group(g))
+        h.addWidget(chevron)
+
+        title = QLabel(f"{len(group)} codes scanned together")
         title.setObjectName("HistoryGroupHeaderLabel")
         h.addWidget(title)
         h.addStretch(1)
@@ -257,8 +289,39 @@ class HistoryView(QWidget):
         h.addWidget(time_label)
 
         self._container_layout.insertWidget(self._container_layout.count() - 1, header)
+        if not expanded:
+            return
+
+        # Snapshot — the captured area with green polygons and red
+        # number badges, exactly as the user saw it in the preview.
+        snap_path = snapshots_dir() / f"{gid}.png"
+        if snap_path.exists():
+            snap_pm = QPixmap(str(snap_path))
+            if not snap_pm.isNull():
+                wrap = QFrame()
+                wrap.setObjectName("HistoryGroupSnapshot")
+                wl = QHBoxLayout(wrap)
+                wl.setContentsMargins(11, 4, 14, 8)
+                snap_label = QLabel()
+                snap_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                # Match the container's width budget — items have ~340 usable.
+                target_w = 340
+                if snap_pm.width() > target_w:
+                    snap_pm = snap_pm.scaledToWidth(
+                        target_w, Qt.TransformationMode.SmoothTransformation
+                    )
+                snap_label.setPixmap(snap_pm)
+                wl.addWidget(snap_label)
+                self._container_layout.insertWidget(
+                    self._container_layout.count() - 1, wrap
+                )
+
         for entry in group:
             self._append_item(entry, in_group=True)
+
+    def _toggle_group(self, group_id: str) -> None:
+        self._expanded[group_id] = not self._expanded.get(group_id, True)
+        self.refresh()
 
     def _get_thumb(self, text: str, fmt: str) -> QPixmap:
         key = (text, fmt)

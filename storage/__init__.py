@@ -1,3 +1,3 @@
-from .history import HistoryEntry, HistoryStore
+from .history import HistoryEntry, HistoryStore, snapshots_dir
 
-__all__ = ["HistoryEntry", "HistoryStore"]
+__all__ = ["HistoryEntry", "HistoryStore", "snapshots_dir"]

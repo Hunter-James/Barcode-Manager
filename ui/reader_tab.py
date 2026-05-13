@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
 )
 
 from decoder import BarcodeResult, decode_image, decode_path
-from storage import HistoryEntry
+from storage import HistoryEntry, snapshots_dir
 
 from .icons import close_icon, snip_icon
 from .snip_overlay import ScreenSnipper
@@ -127,23 +127,40 @@ class PreviewLabel(QLabel):
         if self._raw is None or self._raw.isNull():
             self.clear()
             return
-        scaled = self._raw.scaled(
+        if not self._markers:
+            scaled = self._raw.scaled(
+                self.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            self.setPixmap(scaled)
+            return
+
+        canvas = self.render_annotated(self._raw, self._markers)
+        scaled = canvas.scaled(
             self.size(),
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
-        if not self._markers:
-            self.setPixmap(scaled)
-            return
+        self.setPixmap(scaled)
 
-        canvas = self._raw.copy()
+    @classmethod
+    def render_annotated(
+        cls,
+        raw: QPixmap,
+        markers: list[tuple[list[tuple[int, int]], str | None]],
+    ) -> QPixmap:
+        """Return a copy of *raw* with all polygons and numbered badges
+        drawn in place. Used both for the live preview and to persist
+        an annotated snapshot per multi-code scan."""
+        canvas = raw.copy()
         p = QPainter(canvas)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        w = self._raw.width()
+        w = raw.width()
         line_w = max(2, w // 200)
         pen = QPen(QColor("#39FF14"))
         pen.setWidth(line_w)
-        for poly, label in self._markers:
+        for poly, label in markers:
             if len(poly) < 2:
                 continue
             p.setPen(pen)
@@ -153,14 +170,9 @@ class PreviewLabel(QLabel):
                 b = poly[(i + 1) % len(poly)]
                 p.drawLine(QPointF(a[0], a[1]), QPointF(b[0], b[1]))
             if label is not None:
-                self._draw_badge(p, poly, label, w)
+                cls._draw_badge(p, poly, label, w)
         p.end()
-        scaled = canvas.scaled(
-            self.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self.setPixmap(scaled)
+        return canvas
 
     @staticmethod
     def _draw_badge(p: QPainter, poly: list[tuple[int, int]], label: str, img_w: int) -> None:
@@ -483,6 +495,26 @@ class ReaderTab(QWidget):
             self._workers.remove(w)
             w.deleteLater()
 
+    def _persist_group_snapshot(
+        self,
+        group_id: str,
+        markers: list[tuple[list[tuple[int, int]], str | None]],
+    ) -> None:
+        """Save the captured frame, with polygons + numbered badges
+        drawn on it, so the History view can show 'what was scanned'
+        without re-running the decoder."""
+        if self._current_image is None or self._current_image.size == 0:
+            return
+        try:
+            raw = ndarray_to_qpixmap(self._current_image)
+            annotated = PreviewLabel.render_annotated(raw, markers)
+            path = snapshots_dir() / f"{group_id}.png"
+            annotated.save(str(path), "PNG")
+        except Exception:
+            # Snapshot persistence is best-effort; never let it sink
+            # an otherwise-successful scan.
+            pass
+
     def _on_decode_result(self, results: list[BarcodeResult], worker_id: int) -> None:
         if worker_id != self._latest_still_id:
             return  # an older decode finished after we kicked off a newer one
@@ -553,6 +585,7 @@ class ReaderTab(QWidget):
         # store ends up with the group in natural reading order
         # (code1 on top, code2 below it, etc.).
         group_id = uuid.uuid4().hex
+        self._persist_group_snapshot(group_id, markers)
         for r in reversed(ordered):
             self._history_add(
                 HistoryEntry(

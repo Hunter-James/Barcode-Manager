@@ -197,6 +197,17 @@ QLabel#HistoryGroupHeaderTime {{
     font-size: 9pt;
     background-color: transparent;
 }}
+QToolButton#HistoryGroupChevron {{
+    background: transparent;
+    border: none;
+    padding: 0;
+}}
+QFrame#HistoryGroupSnapshot {{
+    background-color: rgba(26, 143, 227, 0.04);
+    border: none;
+    border-left: 3px solid {ACCENT};
+    border-bottom: 1px solid {SEPARATOR};
+}}
 QLabel#HistoryItemTitle {{
     color: white;
     font-weight: 600;

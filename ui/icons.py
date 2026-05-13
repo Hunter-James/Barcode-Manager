@@ -221,6 +221,29 @@ def filter_icon(size: int = 32, color: str = "#FFFFFF") -> QIcon:
     return _make(size, draw)
 
 
+def chevron_icon(direction: str = "down", size: int = 24, color: str = "#FFFFFF") -> QIcon:
+    """Filled triangle chevron — ``direction`` in {'down', 'right'}."""
+
+    def draw(p: QPainter, s: int) -> None:
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(color))
+        path = QPainterPath()
+        arm = s * 0.22
+        cx, cy = s / 2, s / 2
+        if direction == "right":
+            path.moveTo(cx - arm * 0.5, cy - arm)
+            path.lineTo(cx + arm, cy)
+            path.lineTo(cx - arm * 0.5, cy + arm)
+        else:  # down
+            path.moveTo(cx - arm, cy - arm * 0.5)
+            path.lineTo(cx + arm, cy - arm * 0.5)
+            path.lineTo(cx, cy + arm)
+        path.closeSubpath()
+        p.drawPath(path)
+
+    return _make(size, draw)
+
+
 def close_icon(size: int = 32, color: str = "#FFFFFF") -> QIcon:
     def draw(p: QPainter, s: int) -> None:
         _stroke(p, color, max(1.6, s / 12))

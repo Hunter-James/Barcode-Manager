@@ -84,6 +84,15 @@ def main():
     hist_path = OUT / "multicode_history.png"
     win.grab().save(str(hist_path), "PNG")
     print(f"  -> {hist_path}")
+
+    # Collapse every group to demonstrate the minimal mode.
+    for gid in list(win._history._expanded.keys()):
+        win._history._expanded[gid] = False
+    win._history.refresh()
+    app.processEvents()
+    collapsed_path = OUT / "multicode_history_collapsed.png"
+    win.grab().save(str(collapsed_path), "PNG")
+    print(f"  -> {collapsed_path}")
     return 0
 
 
